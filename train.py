@@ -12,32 +12,17 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
 import runlib
+from models import MODEL_NAMES, build_model
+from quicktrain import accuracy
 
 # MNIST channel statistics, the standard normalisation for this dataset.
 MNIST_MEAN, MNIST_STD = 0.1307, 0.3081
 TRAIN_SIZE, VAL_SIZE = 55000, 5000
-
-
-class Net(nn.Module):
-    """Two convolution layers and two linear layers; about 1.2 million parameters."""
-
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.fc1 = nn.Linear(9216, 128)  # 64 channels x 12 x 12 after the pooling step
-        self.fc2 = nn.Linear(128, 10)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        return self.fc2(F.relu(self.fc1(torch.flatten(x, 1))))
 
 
 def parse_args(argv=None):
@@ -55,6 +40,7 @@ def parse_args(argv=None):
     parser.add_argument("--max-steps", type=int, default=0, help="stop after this many steps (0 = no limit), for smoke tests")
     parser.add_argument("--step-sleep", type=float, default=0.0, help="seconds to sleep per step, to make a short run last longer")
     parser.add_argument("--keep-checkpoints", type=int, default=2)
+    parser.add_argument("--model", choices=MODEL_NAMES, default="cnn")
     for name, value in defaults.items():
         parser.add_argument(f"--{name.replace('_', '-')}", type=type(value), default=value)
     return parser.parse_args(argv)
@@ -75,19 +61,6 @@ def save_checkpoint(run_dir, step, state, keep):
     tmp.replace(path)
     runlib.prune_checkpoints(run_dir, keep)
     return path
-
-
-def evaluate(model, loader, device):
-    """Returns the accuracy of model over every batch in loader."""
-    model.eval()
-    correct = total = 0
-    with torch.no_grad():
-        for x, y in loader:
-            x, y = x.to(device), y.to(device)
-            correct += (model(x).argmax(1) == y).sum().item()
-            total += y.numel()
-    model.train()
-    return correct / total
 
 
 def main(argv=None):
@@ -111,7 +84,7 @@ def main(argv=None):
     val_loader = DataLoader(val_set, batch_size=1000)
     test_loader = DataLoader(test_set, batch_size=1000)
 
-    model = Net().to(device)
+    model = build_model(args.model).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     step = epoch = batch_in_epoch = 0
     last_checkpoint, loss_value = None, None
@@ -161,11 +134,11 @@ def main(argv=None):
         if stopped_early:
             break
         epoch, batch_in_epoch = epoch + 1, 0
-        say(f"epoch {epoch} done step={step} loss={loss_value:.4f} val_acc={evaluate(model, val_loader, device):.4f}")
+        say(f"epoch {epoch} done step={step} loss={loss_value:.4f} val_acc={accuracy(model, val_loader, device):.4f}")
 
     metrics = {
-        "run_id": args.run_id, "steps": step, "epochs_completed": epoch, "stopped_early": stopped_early,
-        "val_accuracy": evaluate(model, val_loader, device), "test_accuracy": evaluate(model, test_loader, device),
+        "run_id": args.run_id, "model": args.model, "steps": step, "epochs_completed": epoch, "stopped_early": stopped_early,
+        "val_accuracy": accuracy(model, val_loader, device), "test_accuracy": accuracy(model, test_loader, device),
         "seconds": round(time.time() - started, 1), "device": str(device), "torch": torch.__version__,
         "seed": args.seed, "resumed_from": resume_from.name if resume_from else None,
     }

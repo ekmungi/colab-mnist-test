@@ -1,0 +1,13 @@
+{
+  "run_id": "run-002",
+  "steps": 1290,
+  "epochs_completed": 3,
+  "stopped_early": false,
+  "val_accuracy": 0.9878,
+  "test_accuracy": 0.9872,
+  "seconds": 96.8,
+  "device": "cuda",
+  "torch": "2.11.0+cu130",
+  "seed": 0,
+  "resumed_from": "checkpoint-00000300.pt"
+}

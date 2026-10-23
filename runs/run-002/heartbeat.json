@@ -1,0 +1,8 @@
+{
+  "step": 1290,
+  "epoch": 3,
+  "loss": 0.005286866333335638,
+  "last_checkpoint": "checkpoint-00001200.pt",
+  "status": "done",
+  "time": 1792794670.9907954
+}

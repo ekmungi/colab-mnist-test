@@ -1,0 +1,13 @@
+{
+  "run_id": "run-001",
+  "steps": 1290,
+  "epochs_completed": 3,
+  "stopped_early": false,
+  "val_accuracy": 0.9866,
+  "test_accuracy": 0.9889,
+  "seconds": 245.4,
+  "device": "cuda",
+  "torch": "2.11.0+cu130",
+  "seed": 0,
+  "resumed_from": null
+}
