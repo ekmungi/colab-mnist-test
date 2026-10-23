@@ -1,0 +1,30 @@
+# Experiment specification for exp-001: a plumbing test of the Colab workflow, not a research question.
+
+[experiment]
+id = "exp-001"
+question = "Can a small training run be started on Colab, monitored, interrupted, resumed and copied back end to end?"
+hypothesis = "A small CNN reaches at least 98 percent test accuracy on MNIST in 3 epochs, and a run killed midway resumes from its checkpoint and finishes."
+kind = "confirm"
+
+[data]
+name = "MNIST"
+source = "downloaded on the Colab machine by torchvision"
+class = "public"
+split = "55000 train and 5000 validation from the official training set; the official 10000 test set is used once, at the end"
+
+[train]
+epochs = 3
+batch_size = 128
+lr = 0.001
+seed = 0
+checkpoint_every = 100
+heartbeat_every_s = 5.0
+
+[budget]
+hardware = "free-tier T4 or CPU"
+max_hours = 0.5
+max_compute_units = 0
+max_retries = 2
+
+[stopping]
+ask_if = "validation accuracy is below 90 percent after epoch 1, or the heartbeat is older than 120 seconds"

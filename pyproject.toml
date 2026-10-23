@@ -1,0 +1,10 @@
+[project]
+name = "colab-mnist-test"
+version = "0.1.0"
+description = "A small MNIST project that exercises the Jeeves Colab research workflow end to end."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

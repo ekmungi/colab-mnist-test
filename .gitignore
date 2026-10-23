@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+.pytest_cache/
+data/
+# Checkpoints are large and live on the Colab machine or in Drive; small run records are committed.
+runs/**/*.pt
+runs/**/*.tmp
