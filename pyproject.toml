@@ -10,5 +10,5 @@ dependencies = []
 local = ["torch", "torchvision", "matplotlib", "ipykernel", "jupyterlab", "nbclient", "nbformat", "pytest"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 testpaths = ["tests"]

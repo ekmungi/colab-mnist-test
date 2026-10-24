@@ -51,20 +51,3 @@ def evaluate(model, loader, device):
 def accuracy(model, loader, device):
     """Returns the fraction of items in loader that model classifies correctly; leaves model in train mode."""
     return evaluate(model, loader, device)[1]
-
-
-def fit(model, train_loader, val_loader, epochs, device, lr=1e-3):
-    """Trains for `epochs` passes over train_loader and returns the history needed to plot the curves.
-
-    Returns a dict of lists: "step_loss" has one training loss per batch; "train_loss", "train_acc",
-    "val_loss" and "val_acc" have one value per epoch, measured with the model in evaluation mode.
-    """
-    history = {"step_loss": [], "train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)  # one optimizer for all epochs, so its state carries over
-    for _ in range(epochs):
-        history["step_loss"] += train_steps(model, train_loader, len(train_loader), device, optimizer=optimizer)
-        for prefix, loader in (("train", train_loader), ("val", val_loader)):
-            loss, acc = evaluate(model, loader, device)
-            history[f"{prefix}_loss"].append(loss)
-            history[f"{prefix}_acc"].append(acc)
-    return history

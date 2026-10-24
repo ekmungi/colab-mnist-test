@@ -1,10 +1,9 @@
-"""Trains a small CNN on MNIST and keeps a heartbeat file, rolling checkpoints and exact resume, so the Colab workflow can be tested end to end.
+"""Command-line training run for the Colab workflow (stage 5): builds data and model, calls the shared fit(), writes the run folder.
 
-Runs on a Colab machine (torch and torchvision are preinstalled there). Everything it writes goes to
-<out-dir>/<run-id>/: train.log, heartbeat.json, checkpoint-*.pt, metrics.json and a DONE marker.
+Everything it writes goes to <out-dir>/<run-id>/: train.log, heartbeat.json, checkpoint-*.pt, metrics.json and a DONE marker.
+Running it again with the same run id resumes from the newest checkpoint.
 """
 import argparse
-import math
 import random
 import sys
 import time
@@ -12,17 +11,13 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, random_split
-from torchvision import datasets, transforms
 
+import callbacks
+import data
+import models
+import quicktrain
 import runlib
-from models import MODEL_NAMES, build_model
-from quicktrain import accuracy
-
-# MNIST channel statistics, the standard normalisation for this dataset.
-MNIST_MEAN, MNIST_STD = 0.1307, 0.3081
-TRAIN_SIZE, VAL_SIZE = 55000, 5000
+import trainer
 
 
 def parse_args(argv=None):
@@ -30,7 +25,8 @@ def parse_args(argv=None):
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--spec", default=None)
     known, _ = pre.parse_known_args(argv)
-    defaults = dict(epochs=3, batch_size=128, lr=1e-3, seed=0, checkpoint_every=100, heartbeat_every_s=5.0)
+    defaults = dict(epochs=3, batch_size=128, lr=1e-3, seed=0, checkpoint_every=100, heartbeat_every_s=5.0,
+                    train_size=55000, val_size=5000)
     if known.spec:
         defaults.update(runlib.load_spec(known.spec).get("train", {}))
     parser = argparse.ArgumentParser(parents=[pre])
@@ -40,7 +36,8 @@ def parse_args(argv=None):
     parser.add_argument("--max-steps", type=int, default=0, help="stop after this many steps (0 = no limit), for smoke tests")
     parser.add_argument("--step-sleep", type=float, default=0.0, help="seconds to sleep per step, to make a short run last longer")
     parser.add_argument("--keep-checkpoints", type=int, default=2)
-    parser.add_argument("--model", choices=MODEL_NAMES, default="cnn")
+    parser.add_argument("--model", choices=models.MODEL_NAMES, default="cnn")
+    parser.add_argument("--augment", action="store_true", help="random shift and rotation on the training images")
     for name, value in defaults.items():
         parser.add_argument(f"--{name.replace('_', '-')}", type=type(value), default=value)
     return parser.parse_args(argv)
@@ -53,18 +50,59 @@ def set_seeds(seed):
     torch.manual_seed(seed)
 
 
-def save_checkpoint(run_dir, step, state, keep):
-    """Writes a checkpoint atomically, then removes older ones beyond `keep`; returns the new path."""
-    path = runlib.checkpoint_path(run_dir, step)
-    tmp = path.with_name(path.name + ".tmp")
-    torch.save(state, tmp)
-    tmp.replace(path)
-    runlib.prune_checkpoints(run_dir, keep)
-    return path
+class LogCallback(trainer.Callback):
+    """Prints and logs one line at the end of each epoch."""
+
+    def __init__(self, say):
+        self.say = say
+
+    def on_epoch_end(self, state, metrics, model, optimizer):
+        self.say(f"epoch {state.epoch} done step={state.step} val_loss={metrics['val_loss']:.4f} val_acc={metrics['val_acc']:.4f}")
+
+
+def run(args, train_set, val_set, test_set, say=print):
+    """Trains (or resumes) on the given datasets and returns the metrics dict that was written to metrics.json.
+
+    The datasets are passed in, so tests can use small synthetic ones and the script uses MNIST.
+    """
+    run_dir = Path(args.out_dir) / args.run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    set_seeds(args.seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = models.build_model(args.model).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    state, resume_from = trainer.TrainState(), runlib.latest_checkpoint(run_dir)
+    checkpoints = callbacks.CheckpointCallback(run_dir, args.checkpoint_every, args.keep_checkpoints)
+    if resume_from is not None:
+        state = callbacks.CheckpointCallback.load(resume_from, model, optimizer, device)
+        checkpoints.last = resume_from.name
+        say(f"resumed from {resume_from.name} at step {state.step}")
+    heartbeat = callbacks.HeartbeatCallback(run_dir / "heartbeat.json", args.heartbeat_every_s, lambda: checkpoints.last)
+    say(f"start device={device} torch={torch.__version__} model={args.model} epochs={args.epochs} batch={args.batch_size} seed={args.seed}")
+
+    started = time.time()
+    history, state, stopped_early = trainer.fit(
+        model, optimizer, train_set, val_set, args.epochs, args.batch_size, device, args.seed, state,
+        [checkpoints, heartbeat, LogCallback(say)], args.max_steps, args.step_sleep, eval_train=False)
+
+    metrics = {
+        "run_id": args.run_id, "model": args.model, "steps": state.step, "epochs_completed": state.epoch,
+        "stopped_early": stopped_early,
+        "val_accuracy": quicktrain.accuracy(model, torch.utils.data.DataLoader(val_set, batch_size=1000), device),
+        "test_accuracy": quicktrain.accuracy(model, torch.utils.data.DataLoader(test_set, batch_size=1000), device),
+        "seconds": round(time.time() - started, 1), "device": str(device), "torch": torch.__version__,
+        "seed": args.seed, "resumed_from": resume_from.name if resume_from else None,
+    }
+    runlib.write_json_atomic(run_dir / "metrics.json", metrics)
+    heartbeat.finish(state, history["step_loss"][-1] if history["step_loss"] else None, "done")
+    (run_dir / "DONE").write_text("finished\n")
+    say(f"finished {metrics}")
+    return metrics
 
 
 def main(argv=None):
-    """Runs the training, resuming from the newest checkpoint in the run folder when one exists."""
+    """Command line entry point: builds the MNIST datasets, then calls run()."""
     args = parse_args(argv)
     run_dir = Path(args.out_dir) / args.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -75,77 +113,9 @@ def main(argv=None):
         print(line, flush=True)
         log.write(line + "\n")
 
-    set_seeds(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((MNIST_MEAN,), (MNIST_STD,))])
-    full = datasets.MNIST(args.data_dir, train=True, download=True, transform=transform)
-    test_set = datasets.MNIST(args.data_dir, train=False, download=True, transform=transform)
-    train_set, val_set = random_split(full, [TRAIN_SIZE, VAL_SIZE], generator=torch.Generator().manual_seed(args.seed))
-    val_loader = DataLoader(val_set, batch_size=1000)
-    test_loader = DataLoader(test_set, batch_size=1000)
-
-    model = build_model(args.model).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    step = epoch = batch_in_epoch = 0
-    last_checkpoint, loss_value = None, None
-
-    resume_from = runlib.latest_checkpoint(run_dir)
-    if resume_from is not None:
-        # weights_only=True refuses to unpickle arbitrary objects, so a tampered checkpoint cannot run code.
-        state = torch.load(resume_from, map_location=device, weights_only=True)
-        model.load_state_dict(state["model"])
-        optimizer.load_state_dict(state["optimizer"])
-        step, epoch, batch_in_epoch = state["step"], state["epoch"], state["batch_in_epoch"]
-        random.setstate(state["python_rng"])
-        torch.set_rng_state(state["torch_rng"].cpu())
-        last_checkpoint = resume_from.name
-        say(f"resumed from {resume_from.name} at step {step}")
-    say(f"start device={device} torch={torch.__version__} epochs={args.epochs} batch={args.batch_size} seed={args.seed}")
-
-    started, last_beat = time.time(), 0.0
-    heartbeat_path = run_dir / "heartbeat.json"
-    stopped_early = False
-    while epoch < args.epochs and not stopped_early:
-        order = torch.Generator().manual_seed(args.seed + epoch)  # same shuffle after a resume
-        loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, generator=order)
-        for index, (x, y) in enumerate(loader):
-            if index < batch_in_epoch:
-                continue  # batches already trained before the checkpoint
-            x, y = x.to(device), y.to(device)
-            optimizer.zero_grad()
-            loss = F.cross_entropy(model(x), y)
-            loss.backward()
-            optimizer.step()
-            step, batch_in_epoch, loss_value = step + 1, index + 1, loss.item()
-            if args.step_sleep:
-                time.sleep(args.step_sleep)
-            if step % args.checkpoint_every == 0:
-                last_checkpoint = save_checkpoint(run_dir, step, {
-                    "model": model.state_dict(), "optimizer": optimizer.state_dict(),
-                    "step": step, "epoch": epoch, "batch_in_epoch": batch_in_epoch,
-                    "python_rng": random.getstate(), "torch_rng": torch.get_rng_state(),
-                }, args.keep_checkpoints).name
-            if time.time() - last_beat >= args.heartbeat_every_s:
-                runlib.write_heartbeat(heartbeat_path, step, epoch, loss_value, last_checkpoint, "running")
-                last_beat = time.time()
-            if args.max_steps and step >= args.max_steps:
-                stopped_early = True
-                break
-        if stopped_early:
-            break
-        epoch, batch_in_epoch = epoch + 1, 0
-        say(f"epoch {epoch} done step={step} loss={loss_value:.4f} val_acc={accuracy(model, val_loader, device):.4f}")
-
-    metrics = {
-        "run_id": args.run_id, "model": args.model, "steps": step, "epochs_completed": epoch, "stopped_early": stopped_early,
-        "val_accuracy": accuracy(model, val_loader, device), "test_accuracy": accuracy(model, test_loader, device),
-        "seconds": round(time.time() - started, 1), "device": str(device), "torch": torch.__version__,
-        "seed": args.seed, "resumed_from": resume_from.name if resume_from else None,
-    }
-    runlib.write_json_atomic(run_dir / "metrics.json", metrics)
-    runlib.write_heartbeat(heartbeat_path, step, epoch, loss_value, last_checkpoint, "done")
-    (run_dir / "DONE").write_text("finished\n")
-    say(f"finished {metrics}")
+    train_full, val_source, test_set = data.load_mnist(args.data_dir, args.augment)
+    train_set, val_set, _, _ = data.make_sets(train_full, val_source, args.train_size, args.val_size, args.seed)
+    run(args, train_set, val_set, test_set, say)
     return 0
 
 
