@@ -1,7 +1,4 @@
-# Everything that is not code lives in artifacts/: data, runs, checkpoints, findings, executed notebooks.
-# It is synced to Drive, never to Git. This repository is public.
 artifacts/
-code_version.txt
 __pycache__/
 .pytest_cache/
 .venv/

@@ -27,22 +27,24 @@ def test_render_output_handles_stream_result_and_error():
     assert run_notebook_local.render_output({"output_type": "unknown"}) == ""
 
 
-def test_default_out_path_is_under_artifacts_scratch_notebook_out(tmp_path):
-    out = run_notebook_local.default_out_path(tmp_path / "notebooks" / "02_pipeline.ipynb")
-    assert out == (tmp_path / "artifacts" / "scratch" / "notebook-out" / "02_pipeline.local.ipynb").resolve()
+def test_default_out_path_is_under_the_artifact_root_scratch_notebook_out(tmp_path):
+    out = run_notebook_local.default_out_path(tmp_path / "notebooks" / "02_pipeline.ipynb", root=tmp_path / "art")
+    assert out == tmp_path / "art" / "scratch" / "notebook-out" / "02_pipeline.local.ipynb"
 
 
-def test_cells_share_one_kernel_and_the_output_notebook_is_written(tmp_path):
+def test_cells_share_one_kernel_and_the_output_notebook_is_written(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARTIFACT_ROOT", str(tmp_path / "art"))
     notebook = tmp_path / "notebooks" / "nb.ipynb"
     write_notebook(notebook, ["value = 41", "print(value + 1)"])
     lines = []
     status = run_notebook_local.run_notebook(notebook, tmp_path, echo=lines.append)
     assert status == 0
     assert "42" in lines
-    assert (tmp_path / "artifacts" / "scratch" / "notebook-out" / "nb.local.ipynb").exists()
+    assert (tmp_path / "art" / "scratch" / "notebook-out" / "nb.local.ipynb").exists()
 
 
-def test_a_failing_cell_stops_the_run_and_returns_status_one(tmp_path):
+def test_a_failing_cell_stops_the_run_and_returns_status_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARTIFACT_ROOT", str(tmp_path / "art"))
     notebook = tmp_path / "notebooks" / "bad.ipynb"
     write_notebook(notebook, ["print('first')", "raise ValueError('boom')", "print('never')"])
     lines = []

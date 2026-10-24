@@ -1,15 +1,19 @@
 """Where things live: one function per folder, so code, notebooks and tools never build paths by hand.
 
-The layout follows the Jeeves Colab convention. The Drive desktop app syncs the whole Dev/research/ folder, so a
-project's code and its git-ignored `artifacts/` folder (data/, scratch/, exp-NNN/run-NNN/) both reach Colab through
-the mounted Drive, and anything Colab writes there comes back to this computer.
+Three places hold one project: the vault (notes), this code folder (synced with GitHub) and the artifacts folder
+(synced with Google Drive). Artifacts are everything that is not code: data/, scratch/ and exp-NNN/run-NNN/.
+On this computer that folder is C:\\Users\\<you>\\ResearchArtifacts\\<project>; on Colab it is the same folder as
+seen through the mounted Drive.
 """
 import os
 import re
 from pathlib import Path
 
-# Name of this project; the project folder is research/<PROJECT> on this computer and on Drive.
+# Name of this project; the code folder, the artifacts folder and the Drive folder all use it.
 PROJECT = "colab-mnist-test"
+
+# The parent folder of all projects' artifacts, on this computer and on Drive.
+ARTIFACTS_PARENT = "ResearchArtifacts"
 
 # Where the mounted Drive appears on a Colab machine.
 DRIVE_MOUNT = Path("/content/drive")
@@ -20,39 +24,40 @@ RUN_PATTERN = re.compile(r"^(run|smoke)-\d{3}$")
 
 
 def project_root():
-    """Returns the folder that holds this file: the project on this computer, the synced copy on Colab."""
+    """Returns the folder that holds this file: the code folder on this computer, the git clone on Colab."""
     return Path(__file__).resolve().parent
 
 
-def drive_project_dir(environ=None, mount=DRIVE_MOUNT):
-    """Finds this project's synced folder on the mounted Drive, or returns None.
+def drive_artifacts_dir(environ=None, mount=DRIVE_MOUNT):
+    """Finds this project's artifacts folder on the mounted Drive, or returns None.
 
-    Order: the DRIVE_PROJECT_DIR environment variable; MyDrive/research/<project>; and, for a computer folder
-    synced by the Drive desktop app, Othercomputers/<computer name>/research/<project>.
+    Order: the DRIVE_ARTIFACTS_DIR environment variable; MyDrive/ResearchArtifacts/<project>; and, for a computer
+    folder synced by the Drive desktop app, Othercomputers/<computer name>/ResearchArtifacts/<project>.
     """
     environ = os.environ if environ is None else environ
-    if environ.get("DRIVE_PROJECT_DIR"):
-        return Path(environ["DRIVE_PROJECT_DIR"])
-    candidates = [Path(mount) / "MyDrive" / "research" / PROJECT]
-    candidates += sorted((Path(mount) / "Othercomputers").glob(f"*/research/{PROJECT}"))
+    if environ.get("DRIVE_ARTIFACTS_DIR"):
+        return Path(environ["DRIVE_ARTIFACTS_DIR"])
+    candidates = [Path(mount) / "MyDrive" / ARTIFACTS_PARENT / PROJECT]
+    candidates += sorted((Path(mount) / "Othercomputers").glob(f"*/{ARTIFACTS_PARENT}/{PROJECT}"))
     return next((c for c in candidates if c.is_dir()), None)
 
 
-def artifact_root(environ=None, on_colab=None, mount=DRIVE_MOUNT):
+def artifact_root(environ=None, on_colab=None, mount=DRIVE_MOUNT, home=None):
     """Returns the artifacts folder for this machine.
 
-    Order: the ARTIFACT_ROOT environment variable; on Colab the artifacts folder inside the synced Drive project
-    when Drive is mounted, otherwise /content/artifacts (lost when the machine ends); on this computer
-    <project>/artifacts. The arguments exist so tests can set the situation; leave them None in normal use.
+    Order: the ARTIFACT_ROOT environment variable; on Colab the Drive artifacts folder when Drive is mounted,
+    otherwise /content/artifacts (lost when the machine ends); on this computer <home>/ResearchArtifacts/<project>
+    when that folder exists, otherwise <project>/artifacts. The arguments exist so tests can set the situation.
     """
     environ = os.environ if environ is None else environ
     if environ.get("ARTIFACT_ROOT"):
         return Path(environ["ARTIFACT_ROOT"])
     on_colab = os.path.isdir("/content") if on_colab is None else on_colab
     if on_colab:
-        synced = drive_project_dir(environ, mount)
-        return synced / "artifacts" if synced else Path("/content/artifacts")
-    return project_root() / "artifacts"
+        synced = drive_artifacts_dir(environ, mount)
+        return synced if synced else Path("/content/artifacts")
+    shared = Path(home or Path.home()) / ARTIFACTS_PARENT / PROJECT
+    return shared if shared.is_dir() else project_root() / "artifacts"
 
 
 def check_names(exp, run_id):

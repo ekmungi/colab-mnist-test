@@ -6,21 +6,32 @@ research question; `specs/exp-001_colab-plumbing.toml` states what is being test
 
 ## Where things live
 
-This repository is `Dev/research/colab-mnist-test`. The Drive desktop app syncs the whole `Dev/research/` folder, so
-the Colab machine reads the code from the mounted Drive and writes its results back into `artifacts/`.
+One project has three places, and each place has one job.
 
-| Folder or file | In Git | What it holds |
-|---|---|---|
-| Helper scripts at the root, `train.py` | yes | `data.py`, `augment.py`, `models.py`, `models_extra.py`, `trainer.py`, `callbacks.py`, `checks.py`, `quicktrain.py`, `runlib.py`, `paths.py` |
-| `specs/` | yes | `exp-NNN_<slug>.toml`, one specification per experiment |
-| `notebooks/` | yes | `01_helpers.ipynb` (stage 2), `02_pipeline.ipynb` (stages 3 and 4) |
-| `tests/`, `tools/` | yes | unit tests; `run_notebook_local.py`, `freeze_code_version.py` |
-| `README.md`, `docs/figures/` | yes | the method in words, and result pictures copied here by hand after review |
-| `artifacts/` | **no** (git-ignored, synced to Drive) | everything else, see below |
-| `code_version.txt` | no | commit hash written by `tools/freeze_code_version.py` before a Colab run |
+| Place | Location on this computer | Synced with | Holds |
+|---|---|---|---|
+| Notes | `Obsidian_Vault\Mungi_Personal\01 PROJECTS\Colab MNIST Test\` | Obsidian | the plan, decisions, tasks and research notes |
+| Code (this repository) | `C:\Users\ekmun\Dev\colab-mnist-test\` | GitHub (public) | everything below except artifacts |
+| Artifacts | `C:\Users\ekmun\ResearchArtifacts\colab-mnist-test\` | Google Drive (two-way) | data, scratch work, experiments and their runs |
+
+A Colab machine gets the code by cloning this public repository, and reads and writes artifacts through the mounted
+Drive. Nothing from the artifacts folder is ever committed, so the repository holds no data, checkpoints or
+patient information.
+
+### This repository
+
+| Folder or file | What it holds |
+|---|---|
+| Helper scripts at the root, `train.py` | `data.py`, `augment.py`, `models.py`, `models_extra.py`, `trainer.py`, `callbacks.py`, `checks.py`, `quicktrain.py`, `runlib.py`, `paths.py` |
+| `specs/` | `exp-NNN_<slug>.toml`, one specification per experiment |
+| `notebooks/` | `01_helpers.ipynb` (stage 2), `02_pipeline.ipynb` (stages 3 and 4) |
+| `tests/`, `tools/` | unit tests; `run_notebook_local.py` runs a notebook cell by cell on this computer |
+| `README.md`, `docs/figures/` | the method in words, and result pictures copied here by hand after review |
+
+### The artifacts folder
 
 ```
-artifacts/
+ResearchArtifacts/colab-mnist-test/
   data/                         datasets and caches
   scratch/                      smoke-NNN runs, notebook-out/, figures/: throwaway, may be deleted
   exp-NNN/
@@ -35,8 +46,8 @@ artifacts/
 ```
 
 `exp-NNN` and `run-NNN` numbers are never reused. A resume keeps its run id; a new attempt gets a new one.
-Smoke tests live in `artifacts/scratch/smoke-NNN`. This repository is public, so nothing under `artifacts/` is ever
-committed, and the repository holds no data, checkpoints or patient information.
+Smoke tests live in `scratch/smoke-NNN`. `paths.py` is the only place that knows where the artifacts folder is:
+`ARTIFACT_ROOT` if set, otherwise the Drive folder on Colab, otherwise `~/ResearchArtifacts/colab-mnist-test` here.
 
 ## The five-stage development pipeline
 
@@ -53,17 +64,17 @@ resumed from a checkpoint gives the same result as an uninterrupted run.
 
 ## Run it
 
-Keep the Python environment outside the synced folder (it is large), and run on this computer (CPU, small settings):
+On this computer (CPU, small settings):
 
 ```
-set UV_PROJECT_ENVIRONMENT=C:\Users\ekmun\PythonEnvs\colab-mnist-test
 uv run --extra local pytest
 uv run --extra local python tools/run_notebook_local.py notebooks/02_pipeline.ipynb
 ```
 
-On Colab, once Drive has synced the project: run `uv run python tools/freeze_code_version.py` on this computer, then
-open `notebooks/02_pipeline.ipynb` in VS Code, choose Select Kernel, Colab, New Colab Server, GPU, T4, and run the
-first code cell (it mounts Drive and finds the code). A script run, from a notebook cell or the Colab command line:
+On Colab: push the code first, because the machine clones what is on GitHub. Then open
+`notebooks/02_pipeline.ipynb` in VS Code, choose Select Kernel, Colab, New Colab Server, GPU, T4 (never TPU), and run
+the first code cell. It clones this repository into `/content/colab-mnist-test` and mounts Drive for the artifacts;
+approve the Drive pop-up within two minutes. A script run, from a notebook cell or the Colab command line:
 
 ```
 python train.py --spec specs/exp-001_colab-plumbing.toml --exp exp-001 --run-id run-003

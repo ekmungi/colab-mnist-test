@@ -7,11 +7,14 @@ import nbformat
 from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # so the project's paths.py can be imported
+import paths  # noqa: E402
 
-def default_out_path(notebook, label="local"):
-    """Returns <project>/artifacts/scratch/notebook-out/<name>.<label>.ipynb for a notebook in <project>/notebooks/."""
-    notebook = Path(notebook).resolve()
-    return notebook.parent.parent / "artifacts" / "scratch" / "notebook-out" / f"{notebook.stem}.{label}.ipynb"
+
+def default_out_path(notebook, label="local", root=None):
+    """Returns <artifact root>/scratch/notebook-out/<name>.<label>.ipynb, where the artifact root is paths.artifact_root()."""
+    base = Path(root) if root else paths.artifact_root()
+    return base / "scratch" / "notebook-out" / f"{Path(notebook).stem}.{label}.ipynb"
 
 
 def render_output(output):

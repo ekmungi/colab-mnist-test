@@ -1,4 +1,4 @@
-"""Tests for paths.py: where the artifacts folder is, how the synced Drive project is found, and the folder naming rules."""
+"""Tests for paths.py: where the artifacts folder is, how the synced Drive folder is found, and the folder naming rules."""
 from pathlib import Path
 
 import pytest
@@ -16,35 +16,40 @@ def test_the_environment_variable_wins():
     assert paths.artifact_root({"ARTIFACT_ROOT": "/somewhere"}, on_colab=True) == Path("/somewhere")
 
 
-def test_drive_project_is_found_under_mydrive_research(tmp_path):
-    mount = make_mount(tmp_path, f"MyDrive/research/{paths.PROJECT}")
-    assert paths.drive_project_dir({}, mount) == mount / "MyDrive" / "research" / paths.PROJECT
+def test_drive_artifacts_are_found_under_mydrive(tmp_path):
+    mount = make_mount(tmp_path, f"MyDrive/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.drive_artifacts_dir({}, mount) == mount / "MyDrive" / "ResearchArtifacts" / paths.PROJECT
 
 
-def test_drive_project_is_found_in_a_computer_folder_synced_by_the_drive_app(tmp_path):
-    mount = make_mount(tmp_path, f"Othercomputers/MY-PC/research/{paths.PROJECT}")
-    assert paths.drive_project_dir({}, mount) == mount / "Othercomputers" / "MY-PC" / "research" / paths.PROJECT
+def test_drive_artifacts_are_found_in_a_computer_folder_synced_by_the_drive_app(tmp_path):
+    mount = make_mount(tmp_path, f"Othercomputers/MY-PC/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.drive_artifacts_dir({}, mount) == mount / "Othercomputers" / "MY-PC" / "ResearchArtifacts" / paths.PROJECT
 
 
-def test_drive_project_environment_variable_overrides_the_search(tmp_path):
-    assert paths.drive_project_dir({"DRIVE_PROJECT_DIR": "/x/y"}, tmp_path) == Path("/x/y")
+def test_the_drive_environment_variable_overrides_the_search(tmp_path):
+    assert paths.drive_artifacts_dir({"DRIVE_ARTIFACTS_DIR": "/x/y"}, tmp_path) == Path("/x/y")
 
 
-def test_drive_project_is_none_when_nothing_matches(tmp_path):
-    assert paths.drive_project_dir({}, tmp_path) is None
+def test_drive_artifacts_are_none_when_nothing_matches(tmp_path):
+    assert paths.drive_artifacts_dir({}, tmp_path) is None
 
 
-def test_on_colab_with_the_project_synced_artifacts_is_inside_it(tmp_path):
-    mount = make_mount(tmp_path, f"Othercomputers/MY-PC/research/{paths.PROJECT}")
-    assert paths.artifact_root({}, on_colab=True, mount=mount) == mount / "Othercomputers" / "MY-PC" / "research" / paths.PROJECT / "artifacts"
+def test_on_colab_with_the_folder_synced_artifacts_are_there(tmp_path):
+    mount = make_mount(tmp_path, f"Othercomputers/MY-PC/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.artifact_root({}, on_colab=True, mount=mount) == mount / "Othercomputers" / "MY-PC" / "ResearchArtifacts" / paths.PROJECT
 
 
-def test_on_colab_without_the_project_the_machine_disk_is_used(tmp_path):
+def test_on_colab_without_the_folder_the_machine_disk_is_used(tmp_path):
     assert paths.artifact_root({}, on_colab=True, mount=tmp_path) == Path("/content/artifacts")
 
 
-def test_on_this_computer_artifacts_sits_in_the_project_folder():
-    assert paths.artifact_root({}, on_colab=False) == paths.project_root() / "artifacts"
+def test_on_this_computer_the_research_artifacts_folder_is_used_when_it_exists(tmp_path):
+    shared = make_mount(tmp_path, f"ResearchArtifacts/{paths.PROJECT}") / "ResearchArtifacts" / paths.PROJECT
+    assert paths.artifact_root({}, on_colab=False, home=tmp_path) == shared
+
+
+def test_on_this_computer_without_that_folder_artifacts_sits_in_the_project(tmp_path):
+    assert paths.artifact_root({}, on_colab=False, home=tmp_path) == paths.project_root() / "artifacts"
 
 
 def test_run_dir_builds_the_expected_path(tmp_path):
