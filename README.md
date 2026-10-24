@@ -10,9 +10,9 @@ One project has three places, and each place has one job.
 
 | Place | Location on this computer | Synced with | Holds |
 |---|---|---|---|
-| Notes | `Obsidian_Vault\Mungi_Personal\01 PROJECTS\Colab MNIST Test\` | Obsidian | the plan, decisions, tasks and research notes |
-| Code (this repository) | `C:\Users\ekmun\Dev\colab-mnist-test\` | GitHub (public) | everything below except artifacts |
-| Artifacts | `C:\Users\ekmun\ResearchArtifacts\colab-mnist-test\` | Google Drive (two-way) | data, scratch work, experiments and their runs |
+| Notes | `<vault>\01 PROJECTS\Colab MNIST Test\` | Obsidian | the plan, decisions, tasks and research notes |
+| Code (this repository) | `C:\Users\<you>\Dev\colab-mnist-test\` | GitHub (public) | everything below except artifacts |
+| Artifacts | `C:\Users\<you>\ResearchArtifacts\colab-mnist-test\` | Google Drive (two-way) | data, scratch work, experiments and their runs |
 
 A Colab machine gets the code by cloning this public repository, and reads and writes artifacts through the mounted
 Drive. Nothing from the artifacts folder is ever committed, so the repository holds no data, checkpoints or
