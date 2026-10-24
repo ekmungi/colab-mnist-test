@@ -91,6 +91,30 @@ def test_keep_copy_never_overwrites_a_kept_dataset(tmp_path):
         datastore.keep_copy("toy", tmp_path / "work", tmp_path / "data", source="s", licence="l", acquired_by="me")
 
 
+def kept_thing(data_root, kind):
+    """Creates something already kept under the name `toy` in data_root: a folder, a zip, a tar.gz or a plain file."""
+    data_root.mkdir(parents=True, exist_ok=True)
+    if kind == "folder":
+        (data_root / "toy").mkdir()
+        (data_root / "toy" / "old.txt").write_text("old")
+    elif kind == "file":
+        (data_root / "toy").write_text("old")
+    else:
+        (data_root / f"toy.{kind}").write_bytes(b"old")
+
+
+@pytest.mark.parametrize("archive", [False, True])
+@pytest.mark.parametrize("kind", ["folder", "zip", "tar.gz", "tgz", "tar", "file"])
+def test_keep_copy_refuses_whatever_is_already_kept_under_the_name_and_changes_nothing(tmp_path, kind, archive):
+    datastore.resolve("toy", "fetch", tmp_path / "data", tmp_path / "work", fetch=fake_fetch([]))
+    kept_thing(tmp_path / "data", kind)
+    before = sorted(p.name for p in (tmp_path / "data").rglob("*"))
+    with pytest.raises(FileExistsError, match="kept copy of 'toy' already exists"):
+        datastore.keep_copy("toy", tmp_path / "work", tmp_path / "data", source="s", licence="l", acquired_by="me",
+                            archive=archive)
+    assert sorted(p.name for p in (tmp_path / "data").rglob("*")) == before
+
+
 def test_keep_copy_of_a_dataset_that_was_never_fetched_is_refused(tmp_path):
     with pytest.raises(datastore.DatasetMissing):
         datastore.keep_copy("toy", tmp_path / "work", tmp_path / "data", source="s", licence="l", acquired_by="me")
@@ -107,6 +131,6 @@ def test_a_login_is_recorded_as_needed_but_never_stored(tmp_path):
     (tmp_path / "toy").mkdir()
     (tmp_path / "toy" / "one.txt").write_text("1")
     datastore.write_manifest(tmp_path / "toy", source="https://example.org/gated", licence="research only",
-                             acquired_by="Anant", credentials_needed=True)
+                             acquired_by="Tester", credentials_needed=True)
     text = (tmp_path / "toy" / "source.md").read_text()
     assert "credentials needed: yes" in text and "never stored" in text

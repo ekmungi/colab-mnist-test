@@ -31,14 +31,16 @@ def project_root():
 def drive_artifacts_dir(environ=None, mount=DRIVE_MOUNT):
     """Finds this project's artifacts folder on the mounted Drive, or returns None.
 
-    Order: the DRIVE_ARTIFACTS_DIR environment variable; MyDrive/ResearchArtifacts/<project>; and, for a computer
-    folder synced by the Drive desktop app, Othercomputers/<computer name>/ResearchArtifacts/<project>.
+    Order: the DRIVE_ARTIFACTS_DIR environment variable; then, for a computer folder synced by the Drive desktop app,
+    Othercomputers/<computer name>/ResearchArtifacts/<project> (computer names in alphabetical order); then
+    MyDrive/ResearchArtifacts/<project>. The synced computer folder comes first because that is where this computer's
+    own copy of the artifacts lives, and the stage scripts and the status probe look there first too.
     """
     environ = os.environ if environ is None else environ
     if environ.get("DRIVE_ARTIFACTS_DIR"):
         return Path(environ["DRIVE_ARTIFACTS_DIR"])
-    candidates = [Path(mount) / "MyDrive" / ARTIFACTS_PARENT / PROJECT]
-    candidates += sorted((Path(mount) / "Othercomputers").glob(f"*/{ARTIFACTS_PARENT}/{PROJECT}"))
+    candidates = sorted((Path(mount) / "Othercomputers").glob(f"*/{ARTIFACTS_PARENT}/{PROJECT}"))
+    candidates.append(Path(mount) / "MyDrive" / ARTIFACTS_PARENT / PROJECT)
     return next((c for c in candidates if c.is_dir()), None)
 
 

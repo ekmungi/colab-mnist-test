@@ -60,3 +60,15 @@ def test_raw_images_come_back_as_pictures_for_display(tmp_path, monkeypatch):
     raw = data.load_mnist_raw(tmp_path / "data", work_dir=tmp_path / "work")
     image, label = raw[2]
     assert image.size == (28, 28) and label == 2 and len(raw.targets) == 6
+
+
+def test_store_mode_checks_a_kept_copy_against_its_source_note(tmp_path):
+    fake_mnist_fetch(tmp_path / "data" / "MNIST")
+    datastore.write_manifest(tmp_path / "data" / "MNIST", source="s", licence="l", acquired_by="Tester")
+    assert len(data.load_mnist(tmp_path / "data", work_dir=tmp_path / "work", mode="store")[0]) == 6
+    (tmp_path / "data" / "MNIST" / "raw" / "train-labels-idx1-ubyte").write_bytes(b"tampered")
+    with pytest.raises(datastore.ChecksumMismatch, match="train-labels-idx1-ubyte"):
+        data.load_mnist(tmp_path / "data", work_dir=tmp_path / "work", mode="store")
+    with pytest.raises(datastore.ChecksumMismatch, match="train-labels-idx1-ubyte"):
+        data.load_mnist_raw(tmp_path / "data", work_dir=tmp_path / "work", mode="store")
+

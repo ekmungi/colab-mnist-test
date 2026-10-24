@@ -24,10 +24,33 @@ import runlib
 import trainer
 
 
+def spec_data_mode(spec, default="fetch"):
+    """Returns the data mode that the specification's [data] table, or its list of [[data]] tables, asks for.
+
+    A table with no `mode` means `default`. With several tables they must all agree, because one training run uses one
+    mode; otherwise this raises SystemExit naming each table's mode and telling the user to pass --data-mode.
+    """
+    tables = spec.get("data", {})
+    tables = tables if isinstance(tables, list) else [tables]
+    labelled = [(t["name"] if isinstance(t.get("name"), str) else f"data[{i}]", t.get("mode", default))
+                for i, t in enumerate(tables) if isinstance(t, dict)]
+    modes = {mode for _, mode in labelled}
+    if len(modes) > 1:
+        listing = ", ".join(f"{label}: {mode}" for label, mode in labelled)
+        raise SystemExit(f"the specification's [[data]] tables use different modes ({listing}), and a run uses one. "
+                         f"Pass --data-mode fetch or --data-mode store to choose the mode for this run.")
+    return modes.pop() if modes else default
+
+
 def parse_args(argv=None):
-    """Parses the command line; values from --spec's [train] table are used as defaults."""
+    """Parses the command line; values from --spec's [train] table are used as defaults.
+
+    A [train] key that matches a fixed option (model, augment, exp, ...) becomes that option's default; any other key
+    becomes a new option of its own. --data-mode on the command line beats the specification's [data] mode.
+    """
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--spec", default=None)
+    pre.add_argument("--data-mode", default=None)   # only read here, to know whether the user chose a mode; checked below
     known, _ = pre.parse_known_args(argv)
     defaults = dict(epochs=3, batch_size=128, lr=1e-3, seed=0, checkpoint_every=100, heartbeat_every_s=5.0,
                     train_size=55000, val_size=5000)
@@ -35,8 +58,10 @@ def parse_args(argv=None):
     if known.spec:
         spec = runlib.load_spec(known.spec)
         defaults.update(spec.get("train", {}))
-        data_mode = spec.get("data", {}).get("mode", data_mode)
-    parser = argparse.ArgumentParser(parents=[pre])
+        if known.data_mode is None:
+            data_mode = spec_data_mode(spec, data_mode)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--spec", default=None, help="experiment specification (TOML); its [train] values are the defaults")
     parser.add_argument("--data-mode", choices=datastore.MODES, default=data_mode,
                         help="fetch: download the dataset onto the machine's disk each session; store: read the kept copy in artifacts/data")
     parser.add_argument("--exp", default="exp-001", help="experiment folder, exp-NNN, or scratch for smoke runs")
@@ -47,9 +72,19 @@ def parse_args(argv=None):
     parser.add_argument("--keep-checkpoints", type=int, default=2)
     parser.add_argument("--model", choices=models.MODEL_NAMES, default="cnn")
     parser.add_argument("--augment", action="store_true", help="random shift and rotation on the training images")
+    fixed = set(vars(parser.parse_args([]))) | {"help"}
     for name, value in defaults.items():
-        parser.add_argument(f"--{name.replace('_', '-')}", type=type(value), default=value)
-    return parser.parse_args(argv)
+        if name in fixed:
+            parser.set_defaults(**{name: value})
+        else:
+            parser.add_argument(f"--{name.replace('_', '-')}", type=type(value), default=value)
+    args = parser.parse_args(argv)
+    # A default does not go through `choices`, so a bad value from the specification is checked here.
+    if args.model not in models.MODEL_NAMES:
+        parser.error(f"model {args.model!r} is not one of {list(models.MODEL_NAMES)}")
+    if args.data_mode not in datastore.MODES:
+        parser.error(f"data mode {args.data_mode!r} is not one of {list(datastore.MODES)}")
+    return args
 
 
 def set_seeds(seed):

@@ -26,6 +26,31 @@ def test_drive_artifacts_are_found_in_a_computer_folder_synced_by_the_drive_app(
     assert paths.drive_artifacts_dir({}, mount) == mount / "Othercomputers" / "MY-PC" / "ResearchArtifacts" / paths.PROJECT
 
 
+def test_a_synced_computer_folder_wins_over_mydrive_when_both_exist(tmp_path):
+    mount = make_mount(tmp_path, f"MyDrive/ResearchArtifacts/{paths.PROJECT}",
+                       f"Othercomputers/MY-PC/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.drive_artifacts_dir({}, mount) == mount / "Othercomputers" / "MY-PC" / "ResearchArtifacts" / paths.PROJECT
+
+
+def test_with_several_synced_computers_the_first_by_name_wins(tmp_path):
+    mount = make_mount(tmp_path, f"Othercomputers/ZED/ResearchArtifacts/{paths.PROJECT}",
+                       f"Othercomputers/ALPHA/ResearchArtifacts/{paths.PROJECT}",
+                       f"MyDrive/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.drive_artifacts_dir({}, mount) == mount / "Othercomputers" / "ALPHA" / "ResearchArtifacts" / paths.PROJECT
+
+
+def test_the_drive_environment_variable_beats_both_drive_folders(tmp_path):
+    mount = make_mount(tmp_path, f"MyDrive/ResearchArtifacts/{paths.PROJECT}",
+                       f"Othercomputers/MY-PC/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.drive_artifacts_dir({"DRIVE_ARTIFACTS_DIR": "/x/y"}, mount) == Path("/x/y")
+
+
+def test_on_colab_artifacts_follow_the_synced_computer_folder_when_both_exist(tmp_path):
+    mount = make_mount(tmp_path, f"MyDrive/ResearchArtifacts/{paths.PROJECT}",
+                       f"Othercomputers/MY-PC/ResearchArtifacts/{paths.PROJECT}")
+    assert paths.artifact_root({}, on_colab=True, mount=mount) == mount / "Othercomputers" / "MY-PC" / "ResearchArtifacts" / paths.PROJECT
+
+
 def test_the_drive_environment_variable_overrides_the_search(tmp_path):
     assert paths.drive_artifacts_dir({"DRIVE_ARTIFACTS_DIR": "/x/y"}, tmp_path) == Path("/x/y")
 

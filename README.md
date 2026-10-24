@@ -57,8 +57,10 @@ ResearchArtifacts/colab-mnist-test/
       config.json env.json git.txt     written once, never changed
       attempts.jsonl metrics_history.jsonl train.log    only appended to
       heartbeat.json                   overwritten (latest state)
-      checkpoints/ figures/ predictions/ stdout.log
-      metrics.json DONE record.md
+      checkpoints/                     rolling: the newest two are kept
+      metrics.json DONE                written when the run ends
+      record.md                        written afterwards, from the results
+      figures/ predictions/ stdout.log optional: made only by your own code or notebooks
 ```
 
 `exp-NNN` and `run-NNN` numbers are never reused. A resume keeps its run id; a new attempt gets a new one.
