@@ -16,7 +16,8 @@ One project has three places, and each place has one job.
 
 A Colab machine gets the code by cloning this public repository, and reads and writes artifacts through the mounted
 Drive. Nothing from the artifacts folder is ever committed, so the repository holds no data, checkpoints or
-patient information.
+patient information. Notebook outputs are never committed either: run
+`python tools/strip_notebook_outputs.py` before a commit (`--check` only reports).
 
 ### This repository
 
@@ -25,7 +26,7 @@ patient information.
 | Helper scripts at the root, `train.py` | `data.py`, `augment.py`, `models.py`, `models_extra.py`, `trainer.py`, `callbacks.py`, `checks.py`, `quicktrain.py`, `runlib.py`, `paths.py` |
 | `specs/` | `exp-NNN_<slug>.toml`, one specification per experiment |
 | `notebooks/` | `01_helpers.ipynb` (stage 2), `02_pipeline.ipynb` (stages 3 and 4) |
-| `tests/`, `tools/` | unit tests; `run_notebook_local.py` runs a notebook cell by cell on this computer |
+| `tests/`, `tools/` | unit tests; `run_notebook_local.py` runs a notebook cell by cell on this computer; `strip_notebook_outputs.py` removes saved outputs before a commit |
 | `README.md`, `docs/figures/` | the method in words, and result pictures copied here by hand after review |
 
 ### Data: fetch or store
