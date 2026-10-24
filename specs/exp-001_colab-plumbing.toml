@@ -8,6 +8,7 @@ kind = "confirm"
 
 [data]
 name = "MNIST"
+mode = "fetch"   # fetch: downloaded by torchvision onto the machine's disk each session, nothing kept in Drive. store: read from artifacts/data.
 source = "downloaded on the Colab machine by torchvision"
 class = "public"
 split = "55000 train and 5000 validation from the official training set; the official 10000 test set is used once, at the end"

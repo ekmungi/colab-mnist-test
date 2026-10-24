@@ -64,6 +64,18 @@ def test_bad_names_are_rejected(exp, run_id):
         paths.check_names(exp, run_id)
 
 
+def test_the_work_data_folder_is_the_machine_disk_on_colab():
+    assert paths.work_data_dir({}, on_colab=True) == Path("/content/data")
+
+
+def test_the_work_data_folder_on_this_computer_is_a_cache_outside_the_artifacts(tmp_path):
+    assert paths.work_data_dir({}, on_colab=False, home=tmp_path) == tmp_path / ".cache" / "research-data" / paths.PROJECT
+
+
+def test_the_work_data_environment_variable_wins():
+    assert paths.work_data_dir({"WORK_DATA_DIR": "/somewhere/else"}, on_colab=True) == Path("/somewhere/else")
+
+
 def test_data_and_figure_folders(tmp_path):
     assert paths.data_dir(tmp_path) == tmp_path / "data"
     assert paths.figure_dir("02_pipeline", tmp_path) == tmp_path / "scratch" / "figures" / "02_pipeline"

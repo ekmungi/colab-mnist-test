@@ -1,8 +1,13 @@
-"""Data helpers: reproducible non-overlapping splits, MNIST loading, and the one place that decides the transforms."""
+"""Data helpers: reproducible non-overlapping splits, MNIST loading in fetch or store mode, and the transforms."""
 import torch
 from torch.utils.data import Subset
 
 import augment
+import datastore
+import paths
+
+# The dataset folder name; torchvision also uses it, so <root>/MNIST/raw holds the files.
+MNIST_NAME = "MNIST"
 
 
 def split_indices(n_items, train_size, val_size, seed):
@@ -13,17 +18,43 @@ def split_indices(n_items, train_size, val_size, seed):
     return order[:train_size], order[train_size:train_size + val_size]
 
 
-def load_mnist(data_dir, augment_train=False):
-    """Downloads MNIST into data_dir if needed and returns (train_full, val_source, test) datasets.
+def fetch_mnist(folder):
+    """Downloads MNIST with torchvision into <folder>/raw. The only code here that uses the network (fetch mode)."""
+    from torchvision import datasets  # imported here so the splitting helper works without torchvision
+
+    datasets.MNIST(folder.parent, train=True, download=True)
+    datasets.MNIST(folder.parent, train=False, download=True)
+
+
+def _mnist_root(data_dir, work_dir, mode):
+    """Returns the folder that holds MNIST/raw for this mode, fetching or unpacking it when needed.
+
+    fetch: downloaded into work_dir (the machine's disk) and nothing is written to data_dir.
+    store: read from the kept copy in data_dir (a zip is unpacked into work_dir); a missing copy raises DatasetMissing.
+    """
+    folder = datastore.resolve(MNIST_NAME, mode, data_dir, work_dir or paths.work_data_dir(), fetch=fetch_mnist)
+    return folder.parent
+
+
+def load_mnist(data_dir, augment_train=False, work_dir=None, mode="fetch"):
+    """Returns (train_full, val_source, test) MNIST datasets, getting the files as `mode` says.
 
     val_source holds the same images as train_full without augmentation, so validation never sees random changes.
     """
-    from torchvision import datasets  # imported here so the splitting helper works without torchvision
+    from torchvision import datasets
 
-    train_full = datasets.MNIST(data_dir, train=True, download=True, transform=augment.build_transform(augment_train))
-    val_source = datasets.MNIST(data_dir, train=True, download=True, transform=augment.build_transform(False))
-    test = datasets.MNIST(data_dir, train=False, download=True, transform=augment.build_transform(False))
+    root = _mnist_root(data_dir, work_dir, mode)
+    train_full = datasets.MNIST(root, train=True, download=False, transform=augment.build_transform(augment_train))
+    val_source = datasets.MNIST(root, train=True, download=False, transform=augment.build_transform(False))
+    test = datasets.MNIST(root, train=False, download=False, transform=augment.build_transform(False))
     return train_full, val_source, test
+
+
+def load_mnist_raw(data_dir, work_dir=None, mode="fetch"):
+    """Returns the training set as plain pictures with no transform, for showing images in a notebook."""
+    from torchvision import datasets
+
+    return datasets.MNIST(_mnist_root(data_dir, work_dir, mode), train=True, download=False)
 
 
 def make_sets(train_full, val_source, train_size, val_size, seed):

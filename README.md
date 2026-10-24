@@ -28,11 +28,26 @@ patient information.
 | `tests/`, `tools/` | unit tests; `run_notebook_local.py` runs a notebook cell by cell on this computer |
 | `README.md`, `docs/figures/` | the method in words, and result pictures copied here by hand after review |
 
+### Data: fetch or store
+
+Each dataset has one of two modes, set in the experiment specification (`[data] mode`) and overridable with
+`--data-mode`. The mode applies to every experiment of the project that uses the dataset.
+
+| Mode | Use it for | What a session does | Drive space |
+|---|---|---|---|
+| `fetch` (default) | Public data that is easy to download, such as the torchvision datasets | Downloads it onto the machine's own disk (`/content/data` on Colab) | none |
+| `store` | Data that needs a login, or that you chose to keep | Copies it from `artifacts/data/` and unpacks a zip onto the machine's own disk | one copy per project |
+
+In `store` mode a missing dataset stops the run with a message, and it never falls back to a download. A dataset is
+kept with `datastore.keep_copy` only after the owner says so, as a folder or a zip with a `source.md` note (origin,
+licence, date, a checksum per file). A dataset behind a login is downloaded by the person who holds the login;
+credentials are never stored.
+
 ### The artifacts folder
 
 ```
 ResearchArtifacts/colab-mnist-test/
-  data/                         datasets and caches
+  data/                         only the datasets you chose to keep (store mode), each with a source.md note
   scratch/                      smoke-NNN runs, notebook-out/, figures/: throwaway, may be deleted
   exp-NNN/
     exp.md  findings.md         the question and conclusion; what was learned, for blog posts

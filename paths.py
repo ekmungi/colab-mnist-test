@@ -60,6 +60,21 @@ def artifact_root(environ=None, on_colab=None, mount=DRIVE_MOUNT, home=None):
     return shared if shared.is_dir() else project_root() / "artifacts"
 
 
+def work_data_dir(environ=None, on_colab=None, home=None):
+    """Returns the folder on the machine's own disk where datasets are downloaded or unpacked for a session.
+
+    Order: the WORK_DATA_DIR environment variable; /content/data on Colab; otherwise <home>/.cache/research-data/<project>.
+    It is deliberately outside the artifacts folder, so nothing in it is synced with Drive.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("WORK_DATA_DIR"):
+        return Path(environ["WORK_DATA_DIR"])
+    on_colab = os.path.isdir("/content") if on_colab is None else on_colab
+    if on_colab:
+        return Path("/content/data")
+    return Path(home or Path.home()) / ".cache" / "research-data" / PROJECT
+
+
 def check_names(exp, run_id):
     """Raises ValueError unless exp looks like exp-NNN (or scratch) and run_id like run-NNN (or smoke-NNN)."""
     if not EXP_PATTERN.match(exp):

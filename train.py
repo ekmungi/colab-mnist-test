@@ -16,6 +16,7 @@ import torch
 
 import callbacks
 import data
+import datastore
 import models
 import paths
 import quicktrain
@@ -30,9 +31,14 @@ def parse_args(argv=None):
     known, _ = pre.parse_known_args(argv)
     defaults = dict(epochs=3, batch_size=128, lr=1e-3, seed=0, checkpoint_every=100, heartbeat_every_s=5.0,
                     train_size=55000, val_size=5000)
+    data_mode = "fetch"
     if known.spec:
-        defaults.update(runlib.load_spec(known.spec).get("train", {}))
+        spec = runlib.load_spec(known.spec)
+        defaults.update(spec.get("train", {}))
+        data_mode = spec.get("data", {}).get("mode", data_mode)
     parser = argparse.ArgumentParser(parents=[pre])
+    parser.add_argument("--data-mode", choices=datastore.MODES, default=data_mode,
+                        help="fetch: download the dataset onto the machine's disk each session; store: read the kept copy in artifacts/data")
     parser.add_argument("--exp", default="exp-001", help="experiment folder, exp-NNN, or scratch for smoke runs")
     parser.add_argument("--run-id", default="run-001", help="run-NNN, or smoke-NNN inside scratch")
     parser.add_argument("--artifact-root", default=None, help="defaults to paths.artifact_root()")
@@ -138,7 +144,7 @@ def main(argv=None):
         print(line, flush=True)
         log.write(line + "\n")
 
-    train_full, val_source, test_set = data.load_mnist(paths.data_dir(root), args.augment)
+    train_full, val_source, test_set = data.load_mnist(paths.data_dir(root), args.augment, mode=args.data_mode)
     train_set, val_set, _, _ = data.make_sets(train_full, val_source, args.train_size, args.val_size, args.seed)
     run(args, train_set, val_set, test_set, say)
     return 0
