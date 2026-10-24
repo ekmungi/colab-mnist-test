@@ -66,3 +66,21 @@ def test_subset_loader_has_the_requested_size_and_repeats_with_the_same_seed():
     again = [y.tolist() for _, y in quicktrain.subset_loader(data, 20, 5, seed=1)]
     assert sum(len(batch) for batch in first) == 20
     assert first == again
+
+
+def test_evaluate_returns_loss_and_accuracy_and_leaves_the_model_in_train_mode():
+    loader = DataLoader(make_dataset(), batch_size=16)
+    model = models.MLP()
+    loss, acc = quicktrain.evaluate(model, loader, "cpu")
+    assert loss > 0 and 0.0 <= acc <= 1.0
+    assert model.training
+
+
+def test_fit_returns_one_value_per_epoch_and_one_loss_per_batch():
+    data = make_dataset()
+    loader = DataLoader(data, batch_size=16)
+    history = quicktrain.fit(models.MLP(), loader, loader, epochs=3, device="cpu")
+    assert len(history["step_loss"]) == 3 * len(loader)
+    for key in ("train_loss", "train_acc", "val_loss", "val_acc"):
+        assert len(history[key]) == 3
+    assert history["val_acc"][-1] > history["val_acc"][0] or history["val_acc"][-1] > 0.9

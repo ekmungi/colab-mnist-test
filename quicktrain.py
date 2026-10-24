@@ -11,12 +11,13 @@ def subset_loader(dataset, size, batch_size, seed, shuffle=True):
     return DataLoader(Subset(dataset, order), batch_size=batch_size, shuffle=shuffle, generator=generator)
 
 
-def train_steps(model, loader, steps, device, lr=1e-3):
+def train_steps(model, loader, steps, device, lr=1e-3, optimizer=None):
     """Trains model for at most `steps` batches taken from loader and returns the list of losses.
 
-    The loader is cycled when it has fewer batches than `steps`.
+    The loader is cycled when it has fewer batches than `steps`. Pass an `optimizer` to keep its state
+    across calls (fit does this); otherwise a fresh Adam optimizer with learning rate `lr` is used.
     """
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = optimizer or torch.optim.Adam(model.parameters(), lr=lr)
     model.train()
     losses = []
     while len(losses) < steps:
@@ -32,14 +33,38 @@ def train_steps(model, loader, steps, device, lr=1e-3):
     return losses
 
 
-def accuracy(model, loader, device):
-    """Returns the fraction of items in loader that model classifies correctly; leaves model in train mode."""
+def evaluate(model, loader, device):
+    """Returns (mean loss, accuracy) of model over every batch in loader; leaves model in train mode."""
     model.eval()
-    correct = total = 0
+    loss_sum = correct = total = 0
     with torch.no_grad():
         for x, y in loader:
             x, y = x.to(device), y.to(device)
-            correct += (model(x).argmax(1) == y).sum().item()
+            logits = model(x)
+            loss_sum += F.cross_entropy(logits, y, reduction="sum").item()
+            correct += (logits.argmax(1) == y).sum().item()
             total += y.numel()
     model.train()
-    return correct / total
+    return loss_sum / total, correct / total
+
+
+def accuracy(model, loader, device):
+    """Returns the fraction of items in loader that model classifies correctly; leaves model in train mode."""
+    return evaluate(model, loader, device)[1]
+
+
+def fit(model, train_loader, val_loader, epochs, device, lr=1e-3):
+    """Trains for `epochs` passes over train_loader and returns the history needed to plot the curves.
+
+    Returns a dict of lists: "step_loss" has one training loss per batch; "train_loss", "train_acc",
+    "val_loss" and "val_acc" have one value per epoch, measured with the model in evaluation mode.
+    """
+    history = {"step_loss": [], "train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)  # one optimizer for all epochs, so its state carries over
+    for _ in range(epochs):
+        history["step_loss"] += train_steps(model, train_loader, len(train_loader), device, optimizer=optimizer)
+        for prefix, loader in (("train", train_loader), ("val", val_loader)):
+            loss, acc = evaluate(model, loader, device)
+            history[f"{prefix}_loss"].append(loss)
+            history[f"{prefix}_acc"].append(acc)
+    return history
