@@ -8,6 +8,12 @@ from nbclient import NotebookClient
 from nbclient.exceptions import CellExecutionError
 
 
+def default_out_path(notebook, label="local"):
+    """Returns <project>/artifacts/scratch/notebook-out/<name>.<label>.ipynb for a notebook in <project>/notebooks/."""
+    notebook = Path(notebook).resolve()
+    return notebook.parent.parent / "artifacts" / "scratch" / "notebook-out" / f"{notebook.stem}.{label}.ipynb"
+
+
 def render_output(output):
     """Returns the printable text of one notebook cell output (stream text, a result, or an error message)."""
     kind = output.get("output_type")
@@ -26,12 +32,13 @@ def run_notebook(path, cwd, out_path=None, timeout=300, echo=print):
     Args:
         path: notebook file to run.
         cwd: working directory of the kernel (relative imports and data paths resolve from here).
-        out_path: where to write the executed copy; defaults to <name>_output.ipynb beside the input.
+        out_path: where to write the executed copy; defaults to default_out_path(path).
         timeout: seconds allowed per cell.
         echo: function used to print progress; replaced in tests.
     """
     path = Path(path)
-    out_path = Path(out_path) if out_path else path.with_name(path.stem + "_output.ipynb")
+    out_path = Path(out_path) if out_path else default_out_path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     notebook = nbformat.read(path, as_version=4)
     client = NotebookClient(notebook, timeout=timeout, kernel_name="python3", resources={"metadata": {"path": str(cwd)}})
     status = 0

@@ -1,7 +1,0 @@
-22:26:32 start device=cuda torch=2.11.0+cu130 epochs=3 batch=128 seed=0
-22:29:34 resumed from checkpoint-00000300.pt at step 300
-22:29:34 start device=cuda torch=2.11.0+cu130 epochs=3 batch=128 seed=0
-22:29:53 epoch 1 done step=430 loss=0.0453 val_acc=0.9822
-22:30:30 epoch 2 done step=860 loss=0.0187 val_acc=0.9798
-22:31:08 epoch 3 done step=1290 loss=0.0053 val_acc=0.9878
-22:31:10 finished {'run_id': 'run-002', 'steps': 1290, 'epochs_completed': 3, 'stopped_early': False, 'val_accuracy': 0.9878, 'test_accuracy': 0.9872, 'seconds': 96.8, 'device': 'cuda', 'torch': '2.11.0+cu130', 'seed': 0, 'resumed_from': 'checkpoint-00000300.pt'}

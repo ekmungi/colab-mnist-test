@@ -1,5 +1,0 @@
-22:21:34 start device=cuda torch=2.11.0+cu130 epochs=3 batch=128 seed=0
-22:22:55 epoch 1 done step=430 loss=0.0471 val_acc=0.9814
-22:24:15 epoch 2 done step=860 loss=0.0177 val_acc=0.9806
-22:25:36 epoch 3 done step=1290 loss=0.0042 val_acc=0.9866
-22:25:39 finished {'run_id': 'run-001', 'steps': 1290, 'epochs_completed': 3, 'stopped_early': False, 'val_accuracy': 0.9866, 'test_accuracy': 0.9889, 'seconds': 245.4, 'device': 'cuda', 'torch': '2.11.0+cu130', 'seed': 0, 'resumed_from': None}

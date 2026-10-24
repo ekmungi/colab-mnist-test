@@ -1,7 +1,10 @@
-"""Small helpers for run folders, heartbeat files and checkpoint discovery, with no torch dependency so they can be tested anywhere."""
+"""Small helpers for run folders, heartbeat files, checkpoint discovery and run history, with no torch dependency so they can be tested anywhere."""
 import json
 import os
+import platform
 import re
+import subprocess
+import sys
 import time
 import tomllib
 from pathlib import Path
@@ -19,8 +22,59 @@ def write_json_atomic(path, payload):
     """
     path = Path(path)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def write_once(path, content):
+    """Writes content (text, or any JSON-serialisable object) to path only if it does not exist; returns True when written.
+
+    Used for the files that describe a run and must never change after it starts: config, environment, code version.
+    """
+    path = Path(path)
+    if path.exists():
+        return False
+    if isinstance(content, str):
+        path.write_text(content if content.endswith("\n") else content + "\n", encoding="utf-8")
+    else:
+        write_json_atomic(path, content)
+    return True
+
+
+def append_jsonl(path, payload):
+    """Appends payload as one JSON line to path, creating the file when needed; history files only ever grow."""
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, default=str) + "\n")
+
+
+def read_jsonl(path):
+    """Returns the list of objects in a JSON-lines file, or an empty list when it does not exist."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    return [json.loads(line) for line in lines if line.strip()]
+
+
+def read_code_version(code_dir):
+    """Returns the code version: the contents of code_version.txt in code_dir, else the git commit, else "unknown"."""
+    marker = Path(code_dir) / "code_version.txt"
+    if marker.is_file():
+        return marker.read_text(encoding="utf-8").strip() or "unknown"
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=code_dir, capture_output=True, text=True, timeout=10)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return "unknown"
+
+
+def environment_info(extra=None):
+    """Returns a dict describing the machine: Python version, platform, and any extra entries (torch version, device)."""
+    info = {"python": sys.version.split()[0], "platform": platform.platform()}
+    info.update(extra or {})
+    return info
 
 
 def write_heartbeat(path, step, epoch, loss, last_checkpoint, status, now=None):

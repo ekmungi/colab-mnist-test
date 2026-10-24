@@ -1,11 +1,8 @@
+# Everything that is not code lives in artifacts/: data, runs, checkpoints, findings, executed notebooks.
+# It is synced to Drive, never to Git. This repository is public.
+artifacts/
+code_version.txt
 __pycache__/
-.venv/
 .pytest_cache/
-data/
-# Checkpoints are large and live on the Colab machine or in Drive; small run records are committed.
-runs/**/*.pt
-runs/**/*.tmp
+.venv/
 notebooks/*_output.ipynb
-notebooks/notebook_results.json
-notebooks/figures/
-notebooks/figures_colab/
