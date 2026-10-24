@@ -1,5 +1,7 @@
 """Tests for the source note format in datastore.py: one strict line format, and a note that verifies nothing is a problem."""
 import hashlib
+import os
+import subprocess
 
 import pytest
 
@@ -113,3 +115,67 @@ def test_an_ordinary_file_with_a_similar_name_is_still_unlisted(tmp_path):
     folder = folder_with_note(tmp_path, [f"- one.txt  sha256={GOOD_DIGEST}"])
     (folder / "desktop.ini.bak").write_text("data\n")
     assert len(datastore.check_manifest(folder)) == 1
+
+
+# Listed names that are not plain relative paths inside the dataset. Whitespace at either end of a name cannot reach this
+# rule, because the file-line format already refuses it (see the malformed-line tests above).
+UNSAFE_NAMES = ["../outside.bin", "sub/../outside.bin", "sub/../../outside.bin", "./../outside.bin", "/abs/outside.bin", "C:/outside.bin",
+                "C:outside.bin", "a:b", "sub\\outside.bin", "a//b", "sub/", "sub/ /x", "sub /x", "a\x00b"]
+
+
+@pytest.mark.parametrize("name", UNSAFE_NAMES)
+def test_a_listed_name_that_is_not_a_plain_relative_path_is_refused_and_never_read(tmp_path, name):
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside")
+    folder = folder_with_note(tmp_path, [f"- one.txt  sha256={GOOD_DIGEST}", f"- {name}  sha256={hashlib.sha256(b'outside').hexdigest()}"],
+                              {"one.txt": "1"})
+    problems = datastore.check_manifest(folder)
+    assert any(name in p or repr(name) in p for p in problems if "not a plain relative path" in p), problems
+    assert not any("changed" in p or "missing" in p for p in problems)      # the name was refused, not looked up
+
+
+def test_an_absolute_path_to_a_real_file_is_refused(tmp_path):
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside")
+    folder = folder_with_note(tmp_path, [f"- one.txt  sha256={GOOD_DIGEST}",
+                                         f"- {outside.as_posix()}  sha256={hashlib.sha256(b'outside').hexdigest()}"])
+    assert any("not a plain relative path" in p for p in datastore.check_manifest(folder))
+
+
+def test_a_name_that_is_not_plain_does_not_hide_an_unlisted_file(tmp_path):
+    folder = folder_with_note(tmp_path, [f"- .//one.txt  sha256={GOOD_DIGEST}"])      # the doubled slash would normalise onto one.txt
+    problems = datastore.check_manifest(folder)
+    assert any(".//one.txt" in p and "not a plain relative path" in p for p in problems)
+    assert any("one.txt" in p and "not listed" in p for p in problems)
+
+
+def link_folder(link, target):
+    """Makes `link` a folder link to `target`: a symlink, or on Windows a junction (which needs no privilege); skips if neither works."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError:
+        pass
+    if os.name == "nt" and subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True).returncode == 0:
+        return
+    pytest.skip("cannot create a folder link here")
+
+
+def test_a_listed_file_reached_through_a_link_to_a_folder_outside_the_dataset_is_refused(tmp_path):
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "elsewhere" / "x.bin").write_bytes(b"outside")
+    folder = folder_with_note(tmp_path, [f"- one.txt  sha256={GOOD_DIGEST}",
+                                         f"- via/x.bin  sha256={hashlib.sha256(b'outside').hexdigest()}"])
+    link_folder(folder / "via", tmp_path / "elsewhere")
+    problems = datastore.check_manifest(folder)
+    assert any("via/x.bin" in p and "plain relative path" in p for p in problems), problems
+    assert not any("changed" in p for p in problems)
+    if "via/x.bin" in datastore._files_under(folder):          # where the folder walk follows the link, the file is also unlisted
+        assert any("via/x.bin" in p and "not listed" in p for p in problems), problems
+
+
+def test_a_subfolder_path_with_spaces_inside_a_part_is_a_plain_relative_path(tmp_path):
+    folder = folder_with_note(tmp_path, [f"- one.txt  sha256={GOOD_DIGEST}", f"- my data/a file.txt  sha256={GOOD_DIGEST}"])
+    (folder / "my data").mkdir()
+    (folder / "my data" / "a file.txt").write_text("1")
+    assert datastore.check_manifest(folder) == []

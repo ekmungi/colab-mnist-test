@@ -9,6 +9,10 @@ import datastore
 
 pytest.importorskip("torchvision")
 
+# Several tests build a dataset without a source note on purpose; the warning that loading one raises is tested in
+# test_datastore_verify.py.
+pytestmark = pytest.mark.filterwarnings("ignore:.*has no source note:UserWarning")
+
 
 def write_idx(path, array):
     """Writes a uint8 array as an uncompressed IDX file, the form torchvision reads once MNIST is unpacked."""

@@ -7,6 +7,7 @@ checkpoints/, metrics.json and a DONE marker. Running it again with the same run
 import argparse
 import datetime
 import random
+import re
 import sys
 import time
 from pathlib import Path
@@ -42,11 +43,62 @@ def spec_data_mode(spec, default="fetch"):
     return modes.pop() if modes else default
 
 
+def parse_bool(text):
+    """Reads true/false (also yes/no, on/off, 1/0, any case) from a command-line value; raises ArgumentTypeError otherwise."""
+    lowered = str(text).strip().lower()
+    if lowered in ("true", "yes", "on", "1"):
+        return True
+    if lowered in ("false", "no", "off", "0"):
+        return False
+    raise argparse.ArgumentTypeError(f"{text!r} is not true or false")
+
+
+def train_table(spec):
+    """Returns the specification's [train] table with every key written with underscores.
+
+    A hyphen and an underscore mean the same option (max-steps is max_steps). Raises SystemExit when [train] is not a table,
+    when a key is written both ways (the message names both spellings), or when a key cannot be an option name.
+    """
+    table = spec.get("train", {})
+    if not isinstance(table, dict):
+        raise SystemExit(f"the specification's train entry must be a [train] table, not {type(table).__name__}")
+    keys, result = {}, {}
+    for key, value in table.items():
+        name = key.replace("-", "_")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
+            raise SystemExit(f"[train] key {key!r} cannot be a command-line option: use letters, digits, hyphens and "
+                             f"underscores, starting with a letter")
+        if name in result:
+            raise SystemExit(f"[train] has both {keys[name]!r} and {key!r}, which are the same option "
+                             f"(hyphens and underscores are interchangeable). Keep one of them.")
+        keys[name], result[name] = key, value
+    return result
+
+
+def add_train_option(parser, name, value):
+    """Adds the option --name for a [train] value, taking its type from the value.
+
+    true/false is a flag (--name alone means true, --name false turns it off), a number or text is a single value, and a
+    non-empty list of one kind of number or text takes one or more values. Anything else raises SystemExit naming the key.
+    """
+    flag = f"--{name.replace('_', '-')}"
+    if isinstance(value, bool):
+        parser.add_argument(flag, type=parse_bool, nargs="?", const=True, default=value)
+    elif type(value) in (int, float, str):
+        parser.add_argument(flag, type=type(value), default=value)
+    elif isinstance(value, list) and value and len({type(v) for v in value}) == 1 and type(value[0]) in (int, float, str):
+        parser.add_argument(flag, type=type(value[0]), nargs="+", default=list(value))
+    else:
+        raise SystemExit(f"[train] {name} = {value!r} cannot be a command-line option. Use true/false, a number, text, "
+                         f"or a non-empty list of numbers or of text.")
+
+
 def parse_args(argv=None):
     """Parses the command line; values from --spec's [train] table are used as defaults.
 
     A [train] key that matches a fixed option (model, augment, exp, ...) becomes that option's default; any other key
-    becomes a new option of its own. --data-mode on the command line beats the specification's [data] mode.
+    becomes a new option of its own (see add_train_option). Hyphens and underscores in [train] keys are interchangeable.
+    --data-mode on the command line beats the specification's [data] mode.
     """
     pre = argparse.ArgumentParser(add_help=False)
     pre.add_argument("--spec", default=None)
@@ -57,7 +109,7 @@ def parse_args(argv=None):
     data_mode = "fetch"
     if known.spec:
         spec = runlib.load_spec(known.spec)
-        defaults.update(spec.get("train", {}))
+        defaults.update(train_table(spec))
         if known.data_mode is None:
             data_mode = spec_data_mode(spec, data_mode)
     parser = argparse.ArgumentParser()
@@ -71,13 +123,14 @@ def parse_args(argv=None):
     parser.add_argument("--step-sleep", type=float, default=0.0, help="seconds to sleep per step, to make a short run last longer")
     parser.add_argument("--keep-checkpoints", type=int, default=2)
     parser.add_argument("--model", choices=models.MODEL_NAMES, default="cnn")
-    parser.add_argument("--augment", action="store_true", help="random shift and rotation on the training images")
+    parser.add_argument("--augment", type=parse_bool, nargs="?", const=True, default=False,
+                        help="random shift and rotation on the training images; --augment false turns off what the specification turns on")
     fixed = set(vars(parser.parse_args([]))) | {"help"}
     for name, value in defaults.items():
         if name in fixed:
             parser.set_defaults(**{name: value})
         else:
-            parser.add_argument(f"--{name.replace('_', '-')}", type=type(value), default=value)
+            add_train_option(parser, name, value)
     args = parser.parse_args(argv)
     # A default does not go through `choices`, so a bad value from the specification is checked here.
     if args.model not in models.MODEL_NAMES:

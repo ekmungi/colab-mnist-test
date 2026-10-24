@@ -6,6 +6,10 @@ import pytest
 
 import datastore
 
+# Several tests build a dataset without a source note on purpose; the warning that loading one raises is tested in
+# test_datastore_verify.py.
+pytestmark = pytest.mark.filterwarnings("ignore:.*has no source note:UserWarning")
+
 
 def make_zip(path, files):
     """Writes a zip archive at `path` holding {name: text} and returns its sha256."""

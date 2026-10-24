@@ -16,6 +16,7 @@ import re
 import shutil
 import stat
 import tarfile
+import warnings
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -34,6 +35,8 @@ _SYSTEM_FILES = frozenset({"desktop.ini", ".ds_store", "thumbs.db"})
 _FILE_LINE = re.compile(r"- (?P<name>\S(?:.*\S)?)  sha256=(?P<digest>[0-9a-f]{64})")
 _LINE_FORMAT = "'- <path>  sha256=<64 lowercase hex digits>' with exactly two spaces before sha256"
 _MARKER_DIGEST = re.compile(r"sha256=([0-9a-f]{64})")
+_UNSAFE_NAME = ("{manifest} lists {name!r}, which is not a plain relative path inside the dataset (no absolute path, drive letter "
+                "or colon, backslash, '..' or empty part, or space at either end), so it was not read")
 
 
 class DatasetMissing(RuntimeError):
@@ -130,21 +133,46 @@ def _unpacked_digest(target):
 
 
 def _check_name(name):
-    """Raises ValueError unless `name` is one plain folder name (it is used to build, and to delete, a work folder)."""
-    if name in ("", ".", "..") or "/" in name or "\\" in name:
+    """Raises ValueError unless `name` is one plain folder name (it is used to build, and to delete, a work folder).
+
+    Refused: empty, "." and "..", a slash, backslash or colon (separators and drive letters), NUL, and whitespace at either
+    end. The dataset checker that runs before a run applies the same rule to the name in the specification.
+    """
+    if name in ("", ".", "..") or name != name.strip() or re.search(r"[\\/:\x00]", name):
         raise ValueError(f"dataset name {name!r} must be one plain folder name")
 
 
-def _verify_against_note(target, digests=None):
-    """Raises ChecksumMismatch when a dataset that has a source note does not match it; a dataset with no note passes.
+def _plain_relative(name):
+    """Tells whether a file name listed in a source note is a plain relative path that stays inside the dataset.
 
-    `digests` maps a file name to a checksum already computed, so a large archive is not read twice.
+    False for an absolute path, a drive letter or any colon, a backslash, NUL, a ".." part, an empty part (a leading,
+    trailing or doubled slash), and whitespace at either end of the name or of any part. The same rule is in the dataset checker.
+    """
+    if name != name.strip() or re.search(r"[\\:\x00]", name):
+        return False
+    return all(part and part != ".." and part == part.strip() for part in name.split("/"))
+
+
+def _escapes(base, path):
+    """Tells whether `path`, after following links, lies outside the folder `base`."""
+    root, resolved = Path(base).resolve(), Path(path).resolve()
+    return resolved != root and root not in resolved.parents
+
+
+def _verify_against_note(target, digests=None, warn_if_missing=True):
+    """Raises ChecksumMismatch when a dataset that has a source note does not match it.
+
+    A dataset with no note still passes, but it was not checked, so this warns (UserWarning) unless warn_if_missing is
+    False. `digests` maps a file name to a checksum already computed, so a large archive is not read twice.
     """
     manifest, _, _ = _manifest_target(target)
     if manifest.is_file():
         problems = check_manifest(target, digests)
         if problems:
             raise ChecksumMismatch(f"{Path(target).name} does not match its source note {manifest.name}: " + "; ".join(problems))
+    elif warn_if_missing:
+        warnings.warn(f"{Path(target).name} has no source note ({manifest.name}), so its files were loaded without a checksum "
+                      f"check. Write one with datastore.write_manifest.", UserWarning, stacklevel=3)
 
 
 def ensure_local_copy(name, data_root, work_dir, expected_sha256=None):
@@ -165,7 +193,7 @@ def ensure_local_copy(name, data_root, work_dir, expected_sha256=None):
         digest = sha256_of(archive)
         if expected_sha256 is not None and digest != expected_sha256:
             raise ChecksumMismatch(f"{archive.name} does not match the expected checksum")
-        _verify_against_note(archive, {archive.name: digest})
+        _verify_against_note(archive, {archive.name: digest}, warn_if_missing=expected_sha256 is None)
         target = work_dir / name
         if _unpacked_digest(target) != digest:
             _unpack(archive, target)
@@ -238,12 +266,15 @@ def write_manifest(target, source, licence, acquired_by, credentials_needed=Fals
 def _read_note(manifest):
     """Returns (entries, problems) from a source note: (name, digest) for each valid file line, and a sentence for each malformed one.
 
-    A line that starts with "- " and contains "sha256=" must match the one file-line format; any other line is prose.
+    A line that starts with "- " and contains "sha256=" must match the one file-line format; any other line is prose. A
+    line in the right format whose name is not a plain relative path is a problem too, and is not returned as an entry.
     """
     entries, problems = [], []
     for number, line in enumerate(manifest.read_text(encoding="utf-8").splitlines(), start=1):
         match = _FILE_LINE.fullmatch(line)
-        if match:
+        if match and not _plain_relative(match["name"]):
+            problems.append(_UNSAFE_NAME.format(manifest=manifest.name, name=match["name"]))
+        elif match:
             entries.append((match["name"], match["digest"]))
         elif line.startswith("- ") and "sha256=" in line:
             problems.append(f"line {number} of {manifest.name} ({line!r}) is not in the form {_LINE_FORMAT}, so it checks nothing")
@@ -264,13 +295,17 @@ def check_manifest(target, digests=None):
     if not entries:
         problems.append(f"{manifest.name} lists no files, so it verifies nothing")
     known = digests or {}
+    listed = set()
     for name, digest in entries:
         path = base / name
+        if _escapes(base, path):                  # a link inside the dataset that leads out of it
+            problems.append(_UNSAFE_NAME.format(manifest=manifest.name, name=name))
+            continue
+        listed.add(PurePosixPath(name).as_posix())
         if not path.is_file():
             problems.append(f"{name} is missing")
         elif (known.get(name) or sha256_of(path)) != digest:
             problems.append(f"{name} has changed since it was recorded")
-    listed = {PurePosixPath(name).as_posix() for name, _ in entries}
     problems += [f"{name} is in the dataset but not listed in {manifest.name}"
                  for name in names if name not in listed and (base / name).is_file()]
     return problems

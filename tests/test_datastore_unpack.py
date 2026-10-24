@@ -8,6 +8,10 @@ import pytest
 
 import datastore
 
+# Several tests build a dataset without a source note on purpose; the warning that loading one raises is tested in
+# test_datastore_verify.py.
+pytestmark = pytest.mark.filterwarnings("ignore:.*has no source note:UserWarning")
+
 
 def make_tar(path, members, mode="w"):
     """Writes a tar archive from (name, type, payload, linkname) tuples; nothing real is created on disk for links or devices."""
@@ -123,7 +127,7 @@ def test_a_zip_entry_that_is_a_regular_file_or_folder_with_unix_modes_is_accepte
     assert (unpack(tmp_path) / "sub" / "one.txt").read_text() == "1"
 
 
-@pytest.mark.parametrize("name", ["", ".", "..", "a/b", "a\\b"])
+@pytest.mark.parametrize("name", ["", ".", "..", "a/b", "a\\b", "toy ", " toy", "toy\t", "a:b", "C:", "a\x00b"])
 def test_a_dataset_name_that_is_not_one_plain_folder_name_is_refused_before_anything_is_deleted(tmp_path, name):
     (tmp_path / "work").mkdir()
     (tmp_path / "work" / "keep.txt").write_text("precious")

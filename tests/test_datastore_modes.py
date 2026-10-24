@@ -5,6 +5,10 @@ import pytest
 
 import datastore
 
+# Several tests build a dataset without a source note on purpose; the warning that loading one raises is tested in
+# test_datastore_verify.py.
+pytestmark = pytest.mark.filterwarnings("ignore:.*has no source note:UserWarning")
+
 
 def fake_fetch(calls):
     """Returns a fetch function that records its calls and writes one file into the folder it is given."""

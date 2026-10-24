@@ -1,10 +1,14 @@
 """Tests for run-time verification in store mode: a kept dataset is checked against its source note, and a replaced archive is unpacked again."""
 import hashlib
+import warnings
 import zipfile
 
 import pytest
 
 import datastore
+
+# Several tests below build a dataset without a note on purpose; the warning that loading it raises is tested separately.
+pytestmark = pytest.mark.filterwarnings("ignore:.*has no source note:UserWarning")
 
 
 def make_zip(path, files):
@@ -80,9 +84,20 @@ def test_a_kept_folder_that_matches_its_note_is_used_in_place(tmp_path, load):
 
 
 @pytest.mark.parametrize("load", LOADERS)
-def test_a_kept_folder_without_a_note_still_loads(tmp_path, load):
+def test_a_kept_folder_without_a_note_still_loads_but_warns_that_it_was_not_verified(tmp_path, load):
     folder = keep_folder(tmp_path / "data", note=False)
-    assert load(tmp_path / "data", tmp_path / "work") == folder
+    with pytest.warns(UserWarning, match=r"toy has no source note \(source.md\).*without a checksum check"):
+        assert load(tmp_path / "data", tmp_path / "work") == folder
+
+
+@pytest.mark.parametrize("load", LOADERS)
+def test_a_kept_dataset_with_a_note_loads_without_any_warning(tmp_path, load):
+    keep_folder(tmp_path / "data")
+    keep_archive(tmp_path / "data2")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        load(tmp_path / "data", tmp_path / "work")
+        datastore.ensure_local_copy("toy", tmp_path / "data2", tmp_path / "work2")
 
 
 @pytest.mark.parametrize("load", LOADERS)
@@ -109,15 +124,18 @@ def test_a_kept_archive_that_matches_its_note_is_unpacked(tmp_path, load):
 
 
 @pytest.mark.parametrize("load", LOADERS)
-def test_a_kept_archive_without_a_note_still_loads(tmp_path, load):
+def test_a_kept_archive_without_a_note_still_loads_but_warns_that_it_was_not_verified(tmp_path, load):
     keep_archive(tmp_path / "data", note=False)
-    assert (load(tmp_path / "data", tmp_path / "work") / "one.txt").read_text() == "1"
+    with pytest.warns(UserWarning, match=r"toy.zip has no source note \(toy.source.md\)"):
+        assert (load(tmp_path / "data", tmp_path / "work") / "one.txt").read_text() == "1"
 
 
 def test_the_expected_checksum_is_still_honoured_when_there_is_no_note(tmp_path):
     archive = keep_archive(tmp_path / "data", note=False)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    assert datastore.ensure_local_copy("toy", tmp_path / "data", tmp_path / "work", expected_sha256=digest).is_dir()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")                  # the archive was verified by the expected checksum, so no warning
+        assert datastore.ensure_local_copy("toy", tmp_path / "data", tmp_path / "work", expected_sha256=digest).is_dir()
     with pytest.raises(datastore.ChecksumMismatch):
         datastore.ensure_local_copy("toy", tmp_path / "data", tmp_path / "work2", expected_sha256="0" * 64)
 
